@@ -31,20 +31,21 @@ type bouncerConfig struct {
 }
 
 type AclConfig struct {
-	WebACLName           string `yaml:"web_acl_name"`
-	RuleGroupName        string `yaml:"rule_group_name"`
-	Region               string `yaml:"region"`
-	Scope                string `yaml:"scope"`
-	IpsetPrefix          string `yaml:"ipset_prefix"`
-	FallbackAction       string `yaml:"fallback_action"`
-	AWSProfile           string `yaml:"aws_profile"`
-	IPHeader             string `yaml:"ip_header"`
-	IPHeaderPosition     string `yaml:"ip_header_position"`
-	Capacity             int    `yaml:"capacity"`
-	CloudWatchEnabled    bool   `yaml:"cloudwatch_enabled"`
-	CloudWatchMetricName string `yaml:"cloudwatch_metric_name"`
-	SampleRequests       bool   `yaml:"sample_requests"`
-	CleanOnStart         bool   `yaml:"remove_sets_on_start"`
+	WebACLName            string `yaml:"web_acl_name"`
+	RuleGroupName         string `yaml:"rule_group_name"`
+	Region                string `yaml:"region"`
+	Scope                 string `yaml:"scope"`
+	IpsetPrefix           string `yaml:"ipset_prefix"`
+	FallbackAction        string `yaml:"fallback_action"`
+	AWSProfile            string `yaml:"aws_profile"`
+	IPHeader              string `yaml:"ip_header"`
+	IPHeaderPosition      string `yaml:"ip_header_position"`
+	Capacity              int    `yaml:"capacity"`
+	CloudWatchEnabled     bool   `yaml:"cloudwatch_enabled"`
+	CloudWatchMetricName  string `yaml:"cloudwatch_metric_name"`
+	SampleRequests        bool   `yaml:"sample_requests"`
+	CleanOnStart          bool   `yaml:"remove_sets_on_start"`
+	DelegateAclManagement bool   `yaml:"delegate_acl_management"`
 }
 
 var ValidActions = []string{"ban", "captcha", "count"}
@@ -129,6 +130,12 @@ func getConfigFromEnv(config *bouncerConfig) {
 					if err != nil {
 						log.Warnf("Invalid value for %s: %s, defaulting to false", key, value)
 						acl.CleanOnStart = false
+					}
+				case "DELEGATE_ACL_MANAGEMENT":
+					acl.DelegateAclManagement, err = strconv.ParseBool(value)
+					if err != nil {
+						log.Warnf("Invalid value for %s: %s, defaulting to false", key, value)
+						acl.DelegateAclManagement = false
 					}
 				}
 			} else {

@@ -415,7 +415,7 @@ func (w *WAF) GetRuleGroup(ctx context.Context, ruleGroupname string) (string, w
 	return *r.LockToken, *r.RuleGroup, nil
 }
 
-func (w *WAF) CleanupAcl(ctx context.Context, acl *wafv2types.WebACL, token *string, allSets bool) error {
+func (w *WAF) CleanupAcl(ctx context.Context, acl *wafv2types.WebACL, token *string) error {
 	err := w.RemoveRuleGroupFromACL(ctx, acl, token)
 	if err != nil {
 		return fmt.Errorf("error removing rule group from ACL: %w", err)
@@ -437,6 +437,10 @@ func (w *WAF) CleanupAcl(ctx context.Context, acl *wafv2types.WebACL, token *str
 		log.Debugf("RuleGroup %s not found, nothing to do", w.config.RuleGroupName)
 	}
 
+	return nil
+}
+
+func (w *WAF) CleanupSets(ctx context.Context, allSets bool) error {
 	if !allSets {
 		w.ipsetManager.DeleteSets(ctx)
 	} else {
@@ -461,7 +465,19 @@ func (w *WAF) Cleanup(ctx context.Context) error {
 		return fmt.Errorf("failed to get WebACL: %w", err)
 	}
 
-	return w.CleanupAcl(ctx, acl, token, false)
+	if !w.config.DelegateAclManagement {
+		err = w.CleanupAcl(ctx, acl, token)
+		if err != nil {
+			return fmt.Errorf("failed to clean WebACL: %w", err)
+		}
+	}
+
+	err = w.CleanupSets(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to clean IPSets: %w", err)
+	}
+
+	return nil
 }
 
 func (w *WAF) ListResources(ctx context.Context) (map[string]Acl, map[string]IpSet, map[string]RuleGroup, error) {
@@ -514,36 +530,37 @@ func (w *WAF) Init(ctx context.Context) error {
 
 	w.ipsetManager = NewIPSetManager(w.config.IpsetPrefix, w.config.Scope, w.client, w.Logger)
 
-	err = w.CleanupAcl(ctx, acl, token, w.config.CleanOnStart)
+	if !w.config.DelegateAclManagement {
+		err = w.CleanupAcl(ctx, acl, token)
 
-	if err != nil {
-		return fmt.Errorf("failed to cleanup: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("failed to cleanup: %w", err)
+		}
+		w.aclsInfo, w.setsInfos, w.ruleGroupsInfos, err = w.ListResources(ctx)
 
-	w.aclsInfo, w.setsInfos, w.ruleGroupsInfos, err = w.ListResources(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to list resources: %w", err)
+		}
 
-	if err != nil {
-		return fmt.Errorf("failed to list resources: %w", err)
-	}
+		err = w.CreateRuleGroup(ctx, w.config.RuleGroupName)
 
-	err = w.CreateRuleGroup(ctx, w.config.RuleGroupName)
+		if err != nil {
+			return fmt.Errorf("failed to create RuleGroup %s: %w", w.config.RuleGroupName, err)
+		}
 
-	if err != nil {
-		return fmt.Errorf("failed to create RuleGroup %s: %w", w.config.RuleGroupName, err)
-	}
+		w.Logger.Infof("RuleGroup %s created", w.config.RuleGroupName)
 
-	w.Logger.Infof("RuleGroup %s created", w.config.RuleGroupName)
+		acl, lockTocken, err := w.GetWebACL(ctx, w.config.WebACLName, w.aclsInfo[w.config.WebACLName].Id)
 
-	acl, lockTocken, err := w.GetWebACL(ctx, w.config.WebACLName, w.aclsInfo[w.config.WebACLName].Id)
+		if err != nil {
+			return fmt.Errorf("failed to get WebACL %s: %w", w.config.WebACLName, err)
+		}
 
-	if err != nil {
-		return fmt.Errorf("failed to get WebACL %s: %w", w.config.WebACLName, err)
-	}
+		err = w.AddRuleGroupToACL(ctx, acl, lockTocken)
 
-	err = w.AddRuleGroupToACL(ctx, acl, lockTocken)
-
-	if err != nil {
-		return fmt.Errorf("failed to add RuleGroup %s to WebACL %s: %w", w.config.RuleGroupName, w.config.WebACLName, err)
+		if err != nil {
+			return fmt.Errorf("failed to add RuleGroup %s to WebACL %s: %w", w.config.RuleGroupName, w.config.WebACLName, err)
+		}
 	}
 
 	return nil
